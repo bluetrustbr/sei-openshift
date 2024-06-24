@@ -1,0 +1,44 @@
+FROM  <imagembase.com.br>/ops/sei-migracao/sei_httpd:v34
+
+RUN yum install -y  php-mcrypt php-pecl-xdebug.x86_64 php56-php-pecl-xdebug.x86_64
+
+ADD ./sei /opt/sei
+ADD ./sip /opt/sip
+ADD ./infra /opt/infra
+RUN rm /opt/sei-v3.0.11.zip /opt/*2 -rf
+RUN chown apache: -R /opt/sei /opt/sip /opt/infra
+
+# Enable HTTP2 Apache
+#RUN echo "LoadModule http2_module modules/mod_http2.so" > /etc/httpd/conf.modules.d/11-http2.conf
+#ADD ./.docker/sei-ssl.conf /etc/httpd/conf.d/sei-ssl.conf
+
+# Enable Prefork
+ADD ./.docker/prefork.conf /etc/httpd/conf.d/prefork.conf
+ADD ./.docker/server-status.conf /etc/httpd/conf.d/server-status.conf
+
+# Enable Deflate and gzip
+ADD ./.docker/deflate.conf /etc/httpd/conf.d/deflate.conf
+
+# Enable Certificados
+
+ADD ./.docker/cert.pem /opt/sei/config/certificados_mod_conectagov/cert.pem
+ADD ./.docker/sei.key /etc/pki/tls/private/sei.key
+ADD ./.docker/sei.crt /etc/pki/tls/certs/sei.crt
+ADD ./.docker/sei.crt /etc/pki/ca-trust/source/anchors/sei.crt
+ADD ./.docker/chain.cer /etc/pki/ca-trust/source/anchors/chain.cer
+
+RUN chown apache: -R /opt/sei/config/certificados_mod_conectagov/cert.pem
+RUN chmod 755 /opt/sei/config/certificados_mod_conectagov/cert.pem
+
+# Crontab
+ADD ./.docker/treto /etc/cron.d/treto
+ADD ./.docker/sip  /etc/cron.d/sip
+ADD ./.docker/sei  /etc/cron.d/sei
+ADD ./.docker/root /var/spool/cron/root
+
+ADD ./.docker/entrypoint.sh /entrypoint.sh
+ADD ./.docker/php.ini /etc/php.ini
+ADD ./.docker/treto.sh /root/treto.sh
+RUN chmod +x /entrypoint.sh
+RUN chmod +x /root/treto.sh
+RUN update-ca-trust extract

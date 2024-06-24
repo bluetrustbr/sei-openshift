@@ -1,0 +1,89 @@
+FROM registry.access.redhat.com/ubi8/php-74
+
+LABEL io.k8s.display-name="SEI - Imagem com suporte para banco de dados Oracle" \
+      io.k8s.description="Imagem base com as dependencias necessarias \
+      para o funcionamento do SEI." \
+      maintainer="suporte SEI<suporte-sei@tjrs.jus.gov.br>"
+
+EXPOSE 8080
+EXPOSE 8081
+
+USER 0
+
+ENV PHP_VERSION=7.4 \
+    PHP_VER_SHORT=74 \
+    NAME=php \
+    INSTALL=INSTALL \
+    HOST=https://sei-commons-sei.apps.sandbox.redhatworkshops.com
+
+
+ENV TZ="America/Sao_Paulo" \
+    LANG="pt_BR.ISO-8859-1"
+
+ARG INSTALL_PKGS="php-pear php-devel php-cli langpacks-en \
+                  glibc-all-langpacks make java-1.8.0-openjdk-headless"
+
+ARG EPEL_PKGS="cabextract xorg-x11-font-utils fontconfig mkfontdir \
+               libsodium libsodium-devel libmcrypt-devel"
+
+
+# Download dos componentes e dependências
+RUN mkdir INSTALL && \
+    cd INSTALL && \
+    pwd && \
+    wget --no-check-certificate ${HOST}/oracle/oracle-instantclient-basic-21.11.0.0.0-1.el8.x86_64.rpm && \
+    wget --no-check-certificate ${HOST}/oracle/oracle-instantclient-devel-21.11.0.0.0-1.el8.x86_64.rpm && \
+    wget --no-check-certificate ${HOST}/oracle/oracle-instantclient-sqlplus-21.11.0.0.0-1.el8.x86_64.rpm && \
+    wget --no-check-certificate ${HOST}/commons/wkhtmltox-0.12.6-1.centos8.x86_64.rpm && \
+    wget --no-check-certificate ${HOST}/commons/xorg-x11-fonts-75dpi-7.5-19.el8.noarch.rpm && \
+    wget --no-check-certificate ${HOST}/commons/epel-release-latest-8.noarch.rpm && \
+    wget --no-check-certificate ${HOST}/commons/msttcore-fonts-installer-2.6-1.noarch.rpm && \
+    wget --no-check-certificate ${HOST}/sei/SEI4.0.11.zip && \
+    wget --no-check-certificate ${HOST}/sei/modulos.zip && \
+    #Instalação dependências Oracle e do Sistema
+    dnf localinstall oracle-instantclient-basic-21.11.0.0.0-1.el8.x86_64.rpm -y && \
+    dnf localinstall oracle-instantclient-devel-21.11.0.0.0-1.el8.x86_64.rpm -y && \
+    dnf localinstall oracle-instantclient-sqlplus-21.11.0.0.0-1.el8.x86_64.rpm -y && \
+    dnf localinstall wkhtmltox-0.12.6-1.centos8.x86_64.rpm -y && \
+    dnf localinstall xorg-x11-fonts-75dpi-7.5-19.el8.noarch.rpm -y && \
+    dnf localinstall epel-release-latest-8.noarch.rpm -y && \
+    dnf localinstall msttcore-fonts-installer-2.6-1.noarch.rpm -y && \
+    #Configuração pós instalações
+    dnf install --setopt=tsflags=nodocs $INSTALL_PKGS -y && \
+    dnf install --setopt=tsflags=nodocs $EPEL_PKGS -y && \
+    fc-cache /usr/share/fonts && \
+    pecl channel-update pecl.php.net && \
+    echo "instantclient,/usr/lib/oracle/21/client64/lib" | pecl install oci8-2.2.0.tgz && \
+    pecl install memcache-4.0.5.2.tgz uploadprogress-2.0.2.tgz uploadprogress-2.0.2.tgz mcrypt-1.0.6.tgz libsodium && \
+    #Ajustes finais
+    dnf update -y && \
+    dnf -y clean all --enablerepo='*' && \
+    yum -y clean all --enablerepo='*' && \
+    chgrp -R 0 . && chmod -R g+rwX /etc/httpd/run/ && \
+    rm -f *.rpm && \
+    #Configurção do SEI
+    unzip SEI4.0.11.zip && \
+    ls -ahl && \
+    cp -pr sei-core-master/sei /opt/app-root/src/ && \
+    cp -pr sei-core-master/sip /opt/app-root/src/ && \
+    cp -pr sei-core-master/infra /opt/app-root/src/
+
+
+COPY source/* ${INSTALL}/
+
+RUN cd ${INSTALL} && \
+    ls -ahl && \
+    pwd && \
+    mv sei.conf /opt/app-root/etc/conf.d/sei.conf && \
+    mv metrics.conf /opt/app-root/etc/conf.d/metrics.conf && \
+    mv 50-sei.ini /etc/php.d/50-sei.ini && \
+    mv 20-oci8.ini /etc/php.d/20-oci8.ini && \
+    mv httpd.conf /etc/httpd/conf/httpd.conf && \
+    rpm -e --nodeps $(rpm -qa '*rpm*' '*dnf*' '*libsolv*' '*hawkey*' 'yum*') && \
+    chgrp -R 0 . && chmod -R g+rwx $HOME/sei && chmod -R g+rwx $HOME/sip  && \
+    chmod -R g+rwx $HOME/infra && chmod -R g+rwx /etc/httpd/run/
+
+RUN rm -Rf $HOME/INSTALL
+    
+#localedef -i pt_BR -f ISO-8859-1 pt_BR.ISO-8859-1 &&    
+CMD export LC_ALL=pt_BR.ISO-8859-1 && httpd -D FOREGROUND
